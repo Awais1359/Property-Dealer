@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { database } from '../utils/database';
 import { localStorageStorage } from '../utils/storage';
 import { firestoreManager } from '../utils/firestore';
-import { ensureAnonymousAuth } from '../utils/firebase';
 import { Property, Client, Deal, Reminder, Renting } from '../types';
 
 // Force Firebase Firestore only (no localStorage/IndexedDB fallbacks)
@@ -23,7 +22,6 @@ export const useDatabase = () => {
       // 1) Prefer Firestore (do not probe with a read that might be blocked by rules)
       setUseFirestore(true);
       try {
-        await ensureAnonymousAuth();
         setIsInitialized(true);
         await loadDataFromFirestore();
         return;
@@ -128,7 +126,6 @@ export const useDatabase = () => {
   const addProperty = async (property: Property) => {
     try {
       if (useFirestore) {
-        await ensureAnonymousAuth();
         await firestoreManager.add('properties', property);
         setProperties(prev => [...prev, property]);
       } else if (useLocalStorage) {
@@ -147,7 +144,6 @@ export const useDatabase = () => {
     try {
       console.log('Updating property:', property);
       if (useFirestore) {
-        await ensureAnonymousAuth();
         await firestoreManager.update('properties', property);
         setProperties(prev => {
           const updated = prev.map(p => p.id === property.id ? property : p);
@@ -179,7 +175,6 @@ export const useDatabase = () => {
   const deleteProperty = async (id: string) => {
     try {
       if (useFirestore) {
-        await ensureAnonymousAuth();
         await firestoreManager.delete('properties', id);
         setProperties(prev => prev.filter(p => p.id !== id));
       } else if (useLocalStorage) {
@@ -197,7 +192,6 @@ export const useDatabase = () => {
   const addClient = async (client: Client) => {
     try {
       if (useFirestore) {
-        await ensureAnonymousAuth();
         await firestoreManager.add('clients', client);
         setClients(prev => [...prev, client]);
       } else if (useLocalStorage) {
@@ -215,7 +209,6 @@ export const useDatabase = () => {
   const updateClient = async (client: Client) => {
     try {
       if (useFirestore) {
-        await ensureAnonymousAuth();
         await firestoreManager.update('clients', client);
         setClients(prev => prev.map(c => c.id === client.id ? client : c));
       } else if (useLocalStorage) {
@@ -233,7 +226,6 @@ export const useDatabase = () => {
   const deleteClient = async (id: string) => {
     try {
       if (useFirestore) {
-        await ensureAnonymousAuth();
         await firestoreManager.delete('clients', id);
         setClients(prev => prev.filter(c => c.id !== id));
       } else if (useLocalStorage) {
@@ -251,7 +243,6 @@ export const useDatabase = () => {
   const addDeal = async (deal: Deal) => {
     try {
       if (useFirestore) {
-        await ensureAnonymousAuth();
         await firestoreManager.add('deals', deal);
         setDeals(prev => [...prev, deal]);
       } else if (useLocalStorage) {
@@ -269,7 +260,6 @@ export const useDatabase = () => {
   const updateDeal = async (deal: Deal) => {
     try {
       if (useFirestore) {
-        await ensureAnonymousAuth();
         await firestoreManager.update('deals', deal);
         setDeals(prev => prev.map(d => d.id === deal.id ? deal : d));
       } else if (useLocalStorage) {
@@ -287,7 +277,6 @@ export const useDatabase = () => {
   const deleteDeal = async (id: string) => {
     try {
       if (useFirestore) {
-        await ensureAnonymousAuth();
         await firestoreManager.delete('deals', id);
         setDeals(prev => prev.filter(d => d.id !== id));
       } else if (useLocalStorage) {
@@ -305,7 +294,6 @@ export const useDatabase = () => {
   const addReminder = async (reminder: Reminder) => {
     try {
       if (useFirestore) {
-        await ensureAnonymousAuth();
         await firestoreManager.add('reminders', reminder);
         setReminders(prev => [...prev, reminder]);
       } else if (useLocalStorage) {
@@ -323,7 +311,6 @@ export const useDatabase = () => {
   const updateReminder = async (reminder: Reminder) => {
     try {
       if (useFirestore) {
-        await ensureAnonymousAuth();
         await firestoreManager.update('reminders', reminder);
         setReminders(prev => prev.map(r => r.id === reminder.id ? reminder : r));
       } else if (useLocalStorage) {
@@ -341,7 +328,6 @@ export const useDatabase = () => {
   const deleteReminder = async (id: string) => {
     try {
       if (useFirestore) {
-        await ensureAnonymousAuth();
         await firestoreManager.delete('reminders', id);
         setReminders(prev => prev.filter(r => r.id !== id));
       } else if (useLocalStorage) {
@@ -359,7 +345,6 @@ export const useDatabase = () => {
   const addRenting = async (renting: Renting) => {
     try {
       if (useFirestore) {
-        await ensureAnonymousAuth();
         await firestoreManager.add('rentings', renting);
         setRentings(prev => [...prev, renting]);
       } else if (useLocalStorage) {
@@ -377,7 +362,6 @@ export const useDatabase = () => {
   const updateRenting = async (renting: Renting) => {
     try {
       if (useFirestore) {
-        await ensureAnonymousAuth();
         await firestoreManager.update('rentings', renting);
         setRentings(prev => prev.map(r => r.id === renting.id ? renting : r));
       } else if (useLocalStorage) {
@@ -395,7 +379,6 @@ export const useDatabase = () => {
   const deleteRenting = async (id: string) => {
     try {
       if (useFirestore) {
-        await ensureAnonymousAuth();
         await firestoreManager.delete('rentings', id);
         setRentings(prev => prev.filter(r => r.id !== id));
       } else if (useLocalStorage) {
