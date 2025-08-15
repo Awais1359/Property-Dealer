@@ -1,11 +1,17 @@
 import { useState, useEffect } from 'react';
 import { database } from '../utils/database';
 import { localStorageStorage } from '../utils/storage';
+import { firestoreManager } from '../utils/firestore';
+import { ensureAnonymousAuth } from '../utils/firebase';
 import { Property, Client, Deal, Reminder, Renting } from '../types';
+
+// Force Firebase Firestore only (no localStorage/IndexedDB fallbacks)
+const FIREBASE_ONLY = true;
 
 export const useDatabase = () => {
   const [isInitialized, setIsInitialized] = useState(false);
   const [useLocalStorage, setUseLocalStorage] = useState(false);
+  const [useFirestore, setUseFirestore] = useState(false);
   const [properties, setProperties] = useState<Property[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
@@ -13,21 +19,48 @@ export const useDatabase = () => {
   const [rentings, setRentings] = useState<Renting[]>([]);
 
   useEffect(() => {
-    const initDatabase = async () => {
+    const initStack = async () => {
+      // 1) Prefer Firestore (do not probe with a read that might be blocked by rules)
+      setUseFirestore(true);
+      try {
+        await ensureAnonymousAuth();
+        setIsInitialized(true);
+        await loadDataFromFirestore();
+        return;
+      } catch (err) {
+        console.warn('Failed to load from Firestore (may be due to rules). Will still attempt Firestore for writes. Falling back to IndexedDB for initial load.', err);
+      }
+
+      if (FIREBASE_ONLY) {
+        // Do not attempt any local persistence. Initialize with empty arrays.
+        setIsInitialized(true);
+        setProperties([]);
+        setClients([]);
+        setDeals([]);
+        setReminders([]);
+        setRentings([]);
+        return;
+      }
+
+      // 2) Try IndexedDB
       try {
         await database.init();
-        setIsInitialized(true);
+        setUseFirestore(false);
         setUseLocalStorage(false);
+        setIsInitialized(true);
         await loadData();
+        return;
       } catch (error) {
         console.error('Failed to initialize IndexedDB, falling back to localStorage:', error);
-        setUseLocalStorage(true);
-        setIsInitialized(true);
-        await loadDataFromLocalStorage();
       }
+
+      // 3) Fallback to localStorage
+      setUseLocalStorage(true);
+      setIsInitialized(true);
+      await loadDataFromLocalStorage();
     };
 
-    initDatabase();
+    initStack();
   }, []);
 
   const loadData = async () => {
@@ -55,6 +88,23 @@ export const useDatabase = () => {
     }
   };
 
+  const loadDataFromFirestore = async () => {
+    console.log('Loading data from Firestore...');
+    const [propertiesData, clientsData, dealsData, remindersData, rentingsData] = await Promise.all([
+      firestoreManager.getAll<Property>('properties'),
+      firestoreManager.getAll<Client>('clients'),
+      firestoreManager.getAll<Deal>('deals'),
+      firestoreManager.getAll<Reminder>('reminders'),
+      firestoreManager.getAll<Renting>('rentings')
+    ]);
+
+    setProperties(propertiesData);
+    setClients(clientsData);
+    setDeals(dealsData);
+    setReminders(remindersData);
+    setRentings(rentingsData);
+  };
+
   const loadDataFromLocalStorage = async () => {
     try {
       console.log('Loading data from localStorage...');
@@ -77,7 +127,11 @@ export const useDatabase = () => {
 
   const addProperty = async (property: Property) => {
     try {
-      if (useLocalStorage) {
+      if (useFirestore) {
+        await ensureAnonymousAuth();
+        await firestoreManager.add('properties', property);
+        setProperties(prev => [...prev, property]);
+      } else if (useLocalStorage) {
         localStorageStorage.addProperty(property);
         setProperties(prev => [...prev, property]);
       } else {
@@ -85,18 +139,22 @@ export const useDatabase = () => {
         setProperties(prev => [...prev, property]);
       }
     } catch (error) {
-      console.error('Failed to add property:', error);
-      // Fallback to localStorage
-      setUseLocalStorage(true);
-      localStorageStorage.addProperty(property);
-      setProperties(prev => [...prev, property]);
+      console.error('Failed to add property (Firestore):', error);
     }
   };
 
   const updateProperty = async (property: Property) => {
     try {
       console.log('Updating property:', property);
-      if (useLocalStorage) {
+      if (useFirestore) {
+        await ensureAnonymousAuth();
+        await firestoreManager.update('properties', property);
+        setProperties(prev => {
+          const updated = prev.map(p => p.id === property.id ? property : p);
+          console.log('Updated properties state:', updated);
+          return updated;
+        });
+      } else if (useLocalStorage) {
         localStorageStorage.updateProperty(property);
         console.log('Property updated in localStorage, updating state...');
         setProperties(prev => {
@@ -114,17 +172,17 @@ export const useDatabase = () => {
         });
       }
     } catch (error) {
-      console.error('Failed to update property:', error);
-      // Fallback to localStorage
-      setUseLocalStorage(true);
-      localStorageStorage.updateProperty(property);
-      setProperties(prev => prev.map(p => p.id === property.id ? property : p));
+      console.error('Failed to update property (Firestore):', error);
     }
   };
 
   const deleteProperty = async (id: string) => {
     try {
-      if (useLocalStorage) {
+      if (useFirestore) {
+        await ensureAnonymousAuth();
+        await firestoreManager.delete('properties', id);
+        setProperties(prev => prev.filter(p => p.id !== id));
+      } else if (useLocalStorage) {
         localStorageStorage.deleteProperty(id);
         setProperties(prev => prev.filter(p => p.id !== id));
       } else {
@@ -132,17 +190,17 @@ export const useDatabase = () => {
         setProperties(prev => prev.filter(p => p.id !== id));
       }
     } catch (error) {
-      console.error('Failed to delete property:', error);
-      // Fallback to localStorage
-      setUseLocalStorage(true);
-      localStorageStorage.deleteProperty(id);
-      setProperties(prev => prev.filter(p => p.id !== id));
+      console.error('Failed to delete property (Firestore):', error);
     }
   };
 
   const addClient = async (client: Client) => {
     try {
-      if (useLocalStorage) {
+      if (useFirestore) {
+        await ensureAnonymousAuth();
+        await firestoreManager.add('clients', client);
+        setClients(prev => [...prev, client]);
+      } else if (useLocalStorage) {
         localStorageStorage.addClient(client);
         setClients(prev => [...prev, client]);
       } else {
@@ -150,17 +208,17 @@ export const useDatabase = () => {
         setClients(prev => [...prev, client]);
       }
     } catch (error) {
-      console.error('Failed to add client:', error);
-      // Fallback to localStorage
-      setUseLocalStorage(true);
-      localStorageStorage.addClient(client);
-      setClients(prev => [...prev, client]);
+      console.error('Failed to add client (Firestore):', error);
     }
   };
 
   const updateClient = async (client: Client) => {
     try {
-      if (useLocalStorage) {
+      if (useFirestore) {
+        await ensureAnonymousAuth();
+        await firestoreManager.update('clients', client);
+        setClients(prev => prev.map(c => c.id === client.id ? client : c));
+      } else if (useLocalStorage) {
         localStorageStorage.updateClient(client);
         setClients(prev => prev.map(c => c.id === client.id ? client : c));
       } else {
@@ -168,17 +226,17 @@ export const useDatabase = () => {
         setClients(prev => prev.map(c => c.id === client.id ? client : c));
       }
     } catch (error) {
-      console.error('Failed to update client:', error);
-      // Fallback to localStorage
-      setUseLocalStorage(true);
-      localStorageStorage.updateClient(client);
-      setClients(prev => prev.map(c => c.id === client.id ? client : c));
+      console.error('Failed to update client (Firestore):', error);
     }
   };
 
   const deleteClient = async (id: string) => {
     try {
-      if (useLocalStorage) {
+      if (useFirestore) {
+        await ensureAnonymousAuth();
+        await firestoreManager.delete('clients', id);
+        setClients(prev => prev.filter(c => c.id !== id));
+      } else if (useLocalStorage) {
         localStorageStorage.deleteClient(id);
         setClients(prev => prev.filter(c => c.id !== id));
       } else {
@@ -186,17 +244,17 @@ export const useDatabase = () => {
         setClients(prev => prev.filter(c => c.id !== id));
       }
     } catch (error) {
-      console.error('Failed to delete client:', error);
-      // Fallback to localStorage
-      setUseLocalStorage(true);
-      localStorageStorage.deleteClient(id);
-      setClients(prev => prev.filter(c => c.id !== id));
+      console.error('Failed to delete client (Firestore):', error);
     }
   };
 
   const addDeal = async (deal: Deal) => {
     try {
-      if (useLocalStorage) {
+      if (useFirestore) {
+        await ensureAnonymousAuth();
+        await firestoreManager.add('deals', deal);
+        setDeals(prev => [...prev, deal]);
+      } else if (useLocalStorage) {
         localStorageStorage.addDeal(deal);
         setDeals(prev => [...prev, deal]);
       } else {
@@ -204,17 +262,17 @@ export const useDatabase = () => {
         setDeals(prev => [...prev, deal]);
       }
     } catch (error) {
-      console.error('Failed to add deal:', error);
-      // Fallback to localStorage
-      setUseLocalStorage(true);
-      localStorageStorage.addDeal(deal);
-      setDeals(prev => [...prev, deal]);
+      console.error('Failed to add deal (Firestore):', error);
     }
   };
 
   const updateDeal = async (deal: Deal) => {
     try {
-      if (useLocalStorage) {
+      if (useFirestore) {
+        await ensureAnonymousAuth();
+        await firestoreManager.update('deals', deal);
+        setDeals(prev => prev.map(d => d.id === deal.id ? deal : d));
+      } else if (useLocalStorage) {
         localStorageStorage.updateDeal(deal);
         setDeals(prev => prev.map(d => d.id === deal.id ? deal : d));
       } else {
@@ -222,17 +280,17 @@ export const useDatabase = () => {
         setDeals(prev => prev.map(d => d.id === deal.id ? deal : d));
       }
     } catch (error) {
-      console.error('Failed to update deal:', error);
-      // Fallback to localStorage
-      setUseLocalStorage(true);
-      localStorageStorage.updateDeal(deal);
-      setDeals(prev => prev.map(d => d.id === deal.id ? deal : d));
+      console.error('Failed to update deal (Firestore):', error);
     }
   };
 
   const deleteDeal = async (id: string) => {
     try {
-      if (useLocalStorage) {
+      if (useFirestore) {
+        await ensureAnonymousAuth();
+        await firestoreManager.delete('deals', id);
+        setDeals(prev => prev.filter(d => d.id !== id));
+      } else if (useLocalStorage) {
         localStorageStorage.deleteDeal(id);
         setDeals(prev => prev.filter(d => d.id !== id));
       } else {
@@ -240,17 +298,17 @@ export const useDatabase = () => {
         setDeals(prev => prev.filter(d => d.id !== id));
       }
     } catch (error) {
-      console.error('Failed to delete deal:', error);
-      // Fallback to localStorage
-      setUseLocalStorage(true);
-      localStorageStorage.deleteDeal(id);
-      setDeals(prev => prev.filter(d => d.id !== id));
+      console.error('Failed to delete deal (Firestore):', error);
     }
   };
 
   const addReminder = async (reminder: Reminder) => {
     try {
-      if (useLocalStorage) {
+      if (useFirestore) {
+        await ensureAnonymousAuth();
+        await firestoreManager.add('reminders', reminder);
+        setReminders(prev => [...prev, reminder]);
+      } else if (useLocalStorage) {
         localStorageStorage.addReminder(reminder);
         setReminders(prev => [...prev, reminder]);
       } else {
@@ -258,17 +316,17 @@ export const useDatabase = () => {
         setReminders(prev => [...prev, reminder]);
       }
     } catch (error) {
-      console.error('Failed to add reminder:', error);
-      // Fallback to localStorage
-      setUseLocalStorage(true);
-      localStorageStorage.addReminder(reminder);
-      setReminders(prev => [...prev, reminder]);
+      console.error('Failed to add reminder (Firestore):', error);
     }
   };
 
   const updateReminder = async (reminder: Reminder) => {
     try {
-      if (useLocalStorage) {
+      if (useFirestore) {
+        await ensureAnonymousAuth();
+        await firestoreManager.update('reminders', reminder);
+        setReminders(prev => prev.map(r => r.id === reminder.id ? reminder : r));
+      } else if (useLocalStorage) {
         localStorageStorage.updateReminder(reminder);
         setReminders(prev => prev.map(r => r.id === reminder.id ? reminder : r));
       } else {
@@ -276,17 +334,17 @@ export const useDatabase = () => {
         setReminders(prev => prev.map(r => r.id === reminder.id ? reminder : r));
       }
     } catch (error) {
-      console.error('Failed to update reminder:', error);
-      // Fallback to localStorage
-      setUseLocalStorage(true);
-      localStorageStorage.updateReminder(reminder);
-      setReminders(prev => prev.map(r => r.id === reminder.id ? reminder : r));
+      console.error('Failed to update reminder (Firestore):', error);
     }
   };
 
   const deleteReminder = async (id: string) => {
     try {
-      if (useLocalStorage) {
+      if (useFirestore) {
+        await ensureAnonymousAuth();
+        await firestoreManager.delete('reminders', id);
+        setReminders(prev => prev.filter(r => r.id !== id));
+      } else if (useLocalStorage) {
         localStorageStorage.deleteReminder(id);
         setReminders(prev => prev.filter(r => r.id !== id));
       } else {
@@ -294,17 +352,17 @@ export const useDatabase = () => {
         setReminders(prev => prev.filter(r => r.id !== id));
       }
     } catch (error) {
-      console.error('Failed to delete reminder:', error);
-      // Fallback to localStorage
-      setUseLocalStorage(true);
-      localStorageStorage.deleteReminder(id);
-      setReminders(prev => prev.filter(r => r.id !== id));
+      console.error('Failed to delete reminder (Firestore):', error);
     }
   };
 
   const addRenting = async (renting: Renting) => {
     try {
-      if (useLocalStorage) {
+      if (useFirestore) {
+        await ensureAnonymousAuth();
+        await firestoreManager.add('rentings', renting);
+        setRentings(prev => [...prev, renting]);
+      } else if (useLocalStorage) {
         localStorageStorage.addRenting(renting);
         setRentings(prev => [...prev, renting]);
       } else {
@@ -312,16 +370,17 @@ export const useDatabase = () => {
         setRentings(prev => [...prev, renting]);
       }
     } catch (error) {
-      console.error('Failed to add renting:', error);
-      setUseLocalStorage(true);
-      localStorageStorage.addRenting(renting);
-      setRentings(prev => [...prev, renting]);
+      console.error('Failed to add renting (Firestore):', error);
     }
   };
 
   const updateRenting = async (renting: Renting) => {
     try {
-      if (useLocalStorage) {
+      if (useFirestore) {
+        await ensureAnonymousAuth();
+        await firestoreManager.update('rentings', renting);
+        setRentings(prev => prev.map(r => r.id === renting.id ? renting : r));
+      } else if (useLocalStorage) {
         localStorageStorage.updateRenting(renting);
         setRentings(prev => prev.map(r => r.id === renting.id ? renting : r));
       } else {
@@ -329,16 +388,17 @@ export const useDatabase = () => {
         setRentings(prev => prev.map(r => r.id === renting.id ? renting : r));
       }
     } catch (error) {
-      console.error('Failed to update renting:', error);
-      setUseLocalStorage(true);
-      localStorageStorage.updateRenting(renting);
-      setRentings(prev => prev.map(r => r.id === renting.id ? renting : r));
+      console.error('Failed to update renting (Firestore):', error);
     }
   };
 
   const deleteRenting = async (id: string) => {
     try {
-      if (useLocalStorage) {
+      if (useFirestore) {
+        await ensureAnonymousAuth();
+        await firestoreManager.delete('rentings', id);
+        setRentings(prev => prev.filter(r => r.id !== id));
+      } else if (useLocalStorage) {
         localStorageStorage.deleteRenting(id);
         setRentings(prev => prev.filter(r => r.id !== id));
       } else {
@@ -346,16 +406,14 @@ export const useDatabase = () => {
         setRentings(prev => prev.filter(r => r.id !== id));
       }
     } catch (error) {
-      console.error('Failed to delete renting:', error);
-      setUseLocalStorage(true);
-      localStorageStorage.deleteRenting(id);
-      setRentings(prev => prev.filter(r => r.id !== id));
+      console.error('Failed to delete renting (Firestore):', error);
     }
   };
 
   return {
     isInitialized,
     useLocalStorage,
+    useFirestore,
     properties,
     clients,
     deals,
@@ -376,6 +434,6 @@ export const useDatabase = () => {
     addRenting,
     updateRenting,
     deleteRenting,
-    loadData: useLocalStorage ? loadDataFromLocalStorage : loadData
+    loadData: useFirestore ? loadDataFromFirestore : (useLocalStorage ? loadDataFromLocalStorage : loadData)
   };
 };
