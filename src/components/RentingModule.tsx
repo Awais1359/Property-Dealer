@@ -18,7 +18,7 @@ const RentingModule: React.FC<RentingModuleProps> = ({
   onAdd,
   onUpdate,
   onDelete,
-  useLocalStorage = false,
+  useLocalStorage: _useLocalStorage = false,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selected, setSelected] = useState<Renting | null>(null);
@@ -39,8 +39,7 @@ const RentingModule: React.FC<RentingModuleProps> = ({
     securityDeposit: 0,
     furnished: 'Unfurnished' as Renting['furnished'],
     availabilityStatus: 'Available' as Renting['availabilityStatus'],
-    ownerName: '',
-    ownerMobile: '',
+    phoneNumber: '',
     amenities: '' as string, // comma separated
     leaseType: 'Yearly' as Renting['leaseDuration']['type'],
     leaseValue: 12,
@@ -59,8 +58,7 @@ const RentingModule: React.FC<RentingModuleProps> = ({
         r.rentingId.toLowerCase().includes(s) ||
         r.location.city.toLowerCase().includes(s) ||
         r.location.area.toLowerCase().includes(s) ||
-        r.owner.name.toLowerCase().includes(s) ||
-        r.owner.mobile.includes(searchTerm);
+        (r.phoneNumber || '').includes(searchTerm);
       const matchesType = filterType === 'All' || r.propertyType === filterType;
       const matchesStatus = filterStatus === 'All' || r.availabilityStatus === filterStatus;
       return matchesSearch && matchesType && matchesStatus;
@@ -83,8 +81,7 @@ const RentingModule: React.FC<RentingModuleProps> = ({
         securityDeposit: r.securityDeposit,
         furnished: r.furnished,
         availabilityStatus: r.availabilityStatus,
-        ownerName: r.owner.name,
-        ownerMobile: r.owner.mobile,
+        phoneNumber: r.phoneNumber,
         amenities: (r.amenities || []).join(', '),
         leaseType: r.leaseDuration.type,
         leaseValue: r.leaseDuration.value,
@@ -109,8 +106,7 @@ const RentingModule: React.FC<RentingModuleProps> = ({
         securityDeposit: 0,
         furnished: 'Unfurnished',
         availabilityStatus: 'Available',
-        ownerName: '',
-        ownerMobile: '',
+        phoneNumber: '',
         amenities: '',
         leaseType: 'Yearly',
         leaseValue: 12,
@@ -147,10 +143,7 @@ const RentingModule: React.FC<RentingModuleProps> = ({
       securityDeposit: formData.securityDeposit,
       furnished: formData.furnished,
       availabilityStatus: formData.availabilityStatus,
-      owner: {
-        name: formData.ownerName,
-        mobile: formData.ownerMobile,
-      },
+      phoneNumber: formData.phoneNumber,
       amenities: formData.amenities
         ? formData.amenities.split(',').map((a) => a.trim()).filter(Boolean)
         : [],
@@ -196,12 +189,12 @@ const RentingModule: React.FC<RentingModuleProps> = ({
         <div>
           <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Rent Management</h2>
           <p className="text-xs sm:text-sm text-gray-500 mt-1">
-            Using {useLocalStorage ? 'localStorage' : 'IndexedDB'} for data storage
+            Using Firebase Firestore for data storage
           </p>
         </div>
         <button
           onClick={() => openModal()}
-          className="w-full sm:w-auto bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-6 py-3 rounded-xl hover:from-emerald-700 hover:to-emerald-800 transition-all duration-300 flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+          className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-300 flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
         >
           <Plus className="w-5 h-5" />
           <span className="font-medium">Add Rent</span>
@@ -267,7 +260,7 @@ const RentingModule: React.FC<RentingModuleProps> = ({
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Type & Size</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Rent</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Owner</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Phone</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Actions</th>
               </tr>
             </thead>
@@ -297,7 +290,7 @@ const RentingModule: React.FC<RentingModuleProps> = ({
                         {r.availabilityStatus}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.owner.name}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.phoneNumber}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex items-center space-x-2">
                         <button onClick={() => openModal(r)} className="text-green-600 hover:text-green-900 p-1 transition-colors" title="Edit">
@@ -546,24 +539,14 @@ const RentingModule: React.FC<RentingModuleProps> = ({
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Customer Name</label>
-              <input
-                type="text"
-                required
-                value={formData.ownerName}
-                onChange={(e) => setFormData({ ...formData, ownerName: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Customer Number</label>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
               <input
                 type="tel"
                 required
-                value={formData.ownerMobile}
-                onChange={(e) => setFormData({ ...formData, ownerMobile: e.target.value })}
+                value={formData.phoneNumber}
+                onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
+                placeholder="e.g., 03001234567"
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500"
               />
             </div>
@@ -666,7 +649,7 @@ const RentingModule: React.FC<RentingModuleProps> = ({
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               {selected ? 'Update' : 'Add'} Rent
             </button>

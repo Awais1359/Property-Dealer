@@ -61,12 +61,7 @@ export interface Renting {
   securityDeposit: number;
   furnished: 'Furnished' | 'Semi-Furnished' | 'Unfurnished';
   availabilityStatus: 'Available' | 'Rented' | 'Under Negotiation' | 'Maintenance' | 'Reserved';
-  owner: {
-    name: string;
-    mobile: string;
-    whatsapp?: string;
-    email?: string;
-  };
+  phoneNumber: string;
   amenities: string[];
   leaseDuration: {
     type: 'Monthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly' | 'Custom';
